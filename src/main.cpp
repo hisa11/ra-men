@@ -1,99 +1,204 @@
 #include "mbed.h"
 
-BufferedSerial pc(USBTX, USBRX, 9600); // パソコンとのシリアル通信
-int16_t A_1 = 0;                       // 左前タイヤ
-int16_t B_1 = 0;                       // 左後ろタイヤ
-int16_t C_1 = 0;                       // 右前タイヤ
-int16_t D_1 = 0;                       // 右後ろタイヤ
-CAN can{PB_12, PB_13, (int)1e6};       // 12と13に送る
-int16_t pwm[4] = {A_1, B_1, C_1, D_1}; // pwm制御
+DigitalIn encoderA(A0); // A相のピン A0からA5
+DigitalIn encoderB(A1); // B相のピン A0からA5
+int counter = 0;
+bool prevStateA = 0;
+bool prevStateB = 0;
+
+BufferedSerial pc(USBTX, USBRX, 250000); // パソコンとのシリアル通信
+// pwm[0] = 0;         左前タイヤ
+// pwm[1] = 0;         左後ろタイヤ
+// pwm[2] = 0;         右前タイヤ
+// pwm[3] = 0;         右後ろタイヤ
+CAN can(PA_11, PA_12, (int)1e6);
+int16_t pwm[4] = {0, 0, 0, 0};  // pwm制御
+int16_t pwm1[4] = {0, 0, 0, 0}; // pwm制御
+
 CANMessage msg;
+int bekon = 'a';
+
+int mikan = 'a'; // ←a方向とb方向がある
+
+DigitalIn button1(D4); // 塗機構スイッチ1
+DigitalIn button2(D5); // 塗機構スイッチ2
 
 int main()
 {
-  while (1)
-  {
-    if (pc.readable())
+    while (1) // ここからロリコン
     {
-      char buf;
-      pc.read(&buf, sizeof(buf));
-      if (buf == 'W' || buf == 'w') // 前進
-      {
-        A_1 = 8000;
-        B_1 = 8000;
-        C_1 = 8000;
-        D_1 = 8000;
-        osDelay(50);
-      }
+        bool stateA = encoderA.read();
+        bool stateB = encoderB.read();
 
-      if (buf == 'S' || buf == 's') // 後進
-      {
-        A_1 = -8000;
-        B_1 = -8000;
-        C_1 = -8000;
-        D_1 = -8000;
-        osDelay(50);
-      }
+        if (prevStateA == 0 && prevStateB == 0)
+        {
+            if (stateA == 1 && stateB == 0)
+            {
+                counter++;
+            }
+            if (stateA == 0 && stateB == 1)
+            {
+                counter--;
+            }
+        }
+        if (prevStateA == 1 && prevStateB == 0)
+        {
+            if (stateA == 1 && stateB == 1)
+            {
+                counter++;
+            }
+            if (stateA == 0 && stateB == 0)
+            {
+                counter--;
+            }
+        }
+        if (prevStateA == 1 && prevStateB == 1)
+        {
+            if (stateA == 0 && stateB == 1)
+            {
+                counter++;
+            }
+            if (stateA == 1 && stateB == 0)
+            {
+                counter--;
+            }
+        }
+        if (prevStateA == 0 && prevStateB == 1)
+        {
+            if (stateA == 0 && stateB == 0)
+            {
+                counter++;
+            }
+            if (stateA == 1 && stateB == 1)
+            {
+                counter--;
+            }
+        }
+        prevStateA = stateA;
+        prevStateB = stateB;
+        wait_ns(100); // ロリコンここまで
 
-      if (buf == 'A' || buf == 'a') // 左回転
-      {
-        A_1 = -2000;
-        B_1 = -2000;
-        C_1 = 2000;
-        D_1 = 2000;
-        osDelay(50);
+        if (button1 == 1 || button2 == 1) // 塗り機構　方向転換
+        {
+            if (mikan == 'a')
+            {
+                mikan = 'b';
+            }
+            else if (mikan == 'b')
+            {
+                mikan = 'a';
+            }
+        }
 
-      }
-      if (buf == 'A' || buf == 'a') // 右回転
-      {
-        A_1 = 2000;
-        B_1 = 2000;
-        C_1 = -2000;
-        D_1 = -2000;
-        osDelay(50);
+        {
 
-      }
-      if (buf == 'Q' || buf == 'q') // 微弱前進
-      {
-        A_1 = 2000;
-        B_1 = 2000;
-        C_1 = 2000;
-        D_1 = 2000;
-        osDelay(50);
+            if (pc.readable()) // 足回り
+            {
+                char buf;
+                pc.read(&buf, sizeof(buf));
 
-      }
-      if (buf == 'Q' || buf == 'q') // 微弱後進
-      {
-        A_1 = -2000;
-        B_1 = -2000;
-        C_1 = -2000;
-        D_1 = -2000;
-        osDelay(50);
+                if (buf == 'N' || buf == 'n')
+                { // 塗り機構　始動プログラム
+                    if (bekon == 'a')
+                    {
+                        bekon = 'b';
+                    }
+                    else if (bekon == 'b')
+                    {
+                        bekon = 'a';
+                    }
+                }
 
-      }
-      if (buf == 'V' || buf == 'v') // Vだっしゅ！！
-      {
-        A_1 = 12000;
-        B_1 = 12000;
-        C_1 = 12000;
-        D_1 = 12000;
-        osDelay(50);
+                if (buf == 'W' || buf == 'w') // 前進
+                {
+                    pwm[0] = 8000;
+                    pwm[1] = 8000;
+                    pwm[2] = 8000;
+                    pwm[3] = 8000;
+                    pwm1[1] = 8000;
+                }
+                else if (buf == 'S' || buf == 's') // 後進
+                {
+                    pwm[0] = -8000;
+                    pwm[1] = -8000;
+                    pwm[2] = -8000;
+                    pwm[3] = -8000;
+                }
+                else if (buf == 'A' || buf == 'a') // 左回転
+                {
+                    pwm[0] = -2000;
+                    pwm[1] = -2000;
+                    pwm[2] = 2000;
+                    pwm[3] = 2000;
+                }
+                else if (buf == 'D' || buf == 'd') // 右回転
+                {
+                    pwm[0] = 2000;
+                    pwm[1] = 2000;
+                    pwm[2] = -2000;
+                    pwm[3] = -2000;
+                }
+                else if (buf == 'Q' || buf == 'q') // 微弱前進
+                {
+                    pwm[0] = 4000;
+                    pwm[1] = 4000;
+                    pwm[2] = 4000;
+                    pwm[3] = 4000;
+                }
+                else if (buf == 'E' || buf == 'e') // 微弱後進
+                {
+                    pwm[0] = -4000;
+                    pwm[1] = -4000;
+                    pwm[2] = -4000;
+                    pwm[3] = -4000;
+                }
+                else if (buf == 'V' || buf == 'v') // Vだっしゅ！！
+                {
+                    pwm[0] = 15000;
+                    pwm[1] = 15000;
+                    pwm[2] = 15000;
+                    pwm[3] = 15000;
+                } // 足回り
 
-      }
-      
-      else{ // 無操作時は止める
-        A_1 = 0;
-        B_1 = 0;
-        C_1 = 0;
-        D_1 = 0;
-        
-      }
-      // 他のキーに対する処理も追加可能
+                else if (buf == 'Z' || buf == 'z')
+                { // 停止
+                    pwm[0] = 0;
+                    pwm[1] = 0;
+                    pwm[2] = 0;
+                    pwm[3] = 0;
+                    pwm1[1] = 0;
+                }
 
-      // キーに対する処理が終わったらCAN通信を行う
+                // もしbekonがaならラックアンドピニオンをとめる。bなら動かす。
+                else if (bekon == 'b')
+                {
+                    pwm[0] = 500;
+                }
+                else if (bekon == 'a')
+                {
+                    pwm[0] = 0;
+                }
 
-      CANMessage msg(5, reinterpret_cast<uint8_t *>(pwm), 8);
-      can.write(msg);
+                // キーに対する処理が終わったらCAN通信を行う
+                // msg.id = 3;
+                // msg.len = 8;
+
+                // ThisThread::sleep_for(1000ms);
+            }
+            if (counter <= -3700)
+            {
+                pwm[0] = 0;
+                pwm[1] = 0;
+                pwm[2] = 0;
+                pwm[3] = 0;
+                pwm1[1] = 0;
+            }
+            CANMessage msg(1, (const uint8_t *)pwm, 8);
+            CANMessage msg1(5, (const uint8_t *)pwm1, 8);
+
+            can.write(msg);
+            can.write(msg1);
+            printf("counter: %d\n", counter);
+        }
     }
-  }
 }
