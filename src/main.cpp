@@ -2,39 +2,46 @@
 
 DigitalIn encoderA(A0); // A相のピン A0からA5
 DigitalIn encoderB(A1); // B相のピン A0からA5
+PwmOut my_servo(D3);    // サーボ
+AnalogIn ain(A5);       // サーボ
 int counter = 0;
 bool prevStateA = 0;
 bool prevStateB = 0;
 
-int koppepan = 'a';
-int dorayaki = 'a';
-
 BufferedSerial pc(USBTX, USBRX, 250000); // パソコンとのシリアル通信
-// pwm[0] = 0;         左前タイヤ
-// pwm[1] = 0;         左後ろタイヤ
-// pwm[2] = 0;         右前タイヤ
-// pwm[3] = 0;         右後ろタイヤ
-CAN can(PA_11, PA_12, (int)1e6);
-int16_t pwm[4] = {0, 0, 0, 0};  // pwm制御
-int16_t pwm1[4] = {0, 0, 0, 0}; // pwm制御
-
 CANMessage msg;
-int bekon = 'a';
-int gohan = 'a';
-int tyuusyoku = 'b';
-int mikan = 'a'; // ←a方向とb方向がある
+// pwm0[0]  左前タイヤ
+// pwm0[1]  左後ろタイヤ
+// pwm0[2]  右前タイヤ
+// pwm0[3]  右後ろタイヤ
+CAN can(PA_11, PA_12, (int)1e6);
+int16_t pwm0[4] = {0, 0, 0, 0}; // モタドラ1
+int16_t pwm1[4] = {0, 0, 0, 0}; // モダドラ2
+int16_t pwm2[4] = {0, 0, 0, 0}; // モダドラ3
+
+int16_t bekon = 0;     // ラックアンドピニオン制御
+int16_t gohan = 0;     // ロリコンカウンターリセット
+int16_t tyuusyoku = 1; // ロジャー安全装置（↓）
+int16_t dorayaki = 0;  // ロジャー安全装置（↑）
+int16_t koppepan = 0;  // ラックアンドピニオン方向
+
+int16_t kukki = 2;  // タイヤ動作の有無
+int16_t tamago = 0; // クローラー動作の有無
 
 DigitalIn button1(D4); // 塗機構スイッチ1
 DigitalIn button2(D5); // 塗機構スイッチ2
 
 int main()
 {
+    button1.mode(PullUp);
+    button2.mode(PullUp);
     while (1) // ここからロリコン
     {
-        int button1State = button1.read();
-        int button2State = button2.read();
+
         bool stateA = encoderA.read();
         bool stateB = encoderB.read();
+
+        // ここからサーボ
 
         if (prevStateA == 0 && prevStateB == 0)
         {
@@ -84,98 +91,258 @@ int main()
         prevStateB = stateB;
         wait_ns(100); // ロリコンここまで
 
-        if (pc.readable()) // 足回り
+        if (pc.readable()) // サーボ
         {
             char buf;
-            pc.read(&buf, sizeof(buf));
+            if (buf == 'U') // 左
+            {
+                for (int i = 0; i < 200; i++)
+                {
+                    my_servo = i / 650.0;
+                    ThisThread::sleep_for(20ms);
+                }
+            }
+            if (buf == 'I') // 右
+            {
+                for (int i = 150; i > 0; i--)
+                {
+                    my_servo = i / 600.0;
+                    ThisThread::sleep_for(20ms);
+                }
+            }
+
+            if (buf == 'u') // 左
+            {
+                for (int i = 0; i < 200; i++)
+                {
+                    my_servo = i / 100.0;
+                    ThisThread::sleep_for(20ms);
+                }
+            }
+            if (buf == 'i') // 右
+            {
+                for (int i = 150; i > 0; i--)
+                {
+                    my_servo = i / 50.0;
+                    ThisThread::sleep_for(20ms);
+                }
+            }
+            }
+            if (buf == '=')
+            {
+                kukki = 0;
+            }
+            else if (buf == '~')
+            {
+                kukki = 1;
+            }
+            else if (buf == '|')
+            {
+                kukki = 2;
+            }
 
             if (buf == 'W' || buf == 'w') // 前進
             {
-                pwm[0] = 8000;
-                pwm[1] = 8000;
-                pwm[2] = 8000;
-                pwm[3] = 8000;
-                pwm1[1] = 8000;
+                if (kukki == 0)
+                {
+                    pwm0[0] = 16000;
+                    pwm0[1] = 16000;
+                    pwm0[2] = 16000;
+                    pwm0[3] = 16000;
+                    pwm1[3] = 13000;
+                }
+                else if (kukki == 2)
+                {
+                    pwm0[0] = -16000;
+                    pwm0[1] = -16000;
+                    pwm0[2] = -16000;
+                    pwm0[3] = -16000;
+                    pwm1[3] = -13000;
+                }
             }
             else if (buf == 'S' || buf == 's') // 後進
             {
-                pwm[0] = -8000;
-                pwm[1] = -8000;
-                pwm[2] = -8000;
-                pwm[3] = -8000;
+                if (kukki == 0)
+                {
+                    pwm0[0] = -16000;
+                    pwm0[1] = -16000;
+                    pwm0[2] = -16000;
+                    pwm0[3] = -16000;
+                    pwm1[3] = -13000;
+                }
+                else if (kukki == 2)
+                {
+                    pwm0[0] = 16000;
+                    pwm0[1] = 16000;
+                    pwm0[2] = 16000;
+                    pwm0[3] = 16000;
+                    pwm1[3] = 13000;
+                }
             }
-            else if (buf == 'A' || buf == 'a') // 左回転
+            else if (buf == 'a') // 左回転
             {
-                pwm[0] = -2000;
-                pwm[1] = -2000;
-                pwm[2] = 2000;
-                pwm[3] = 2000;
+                if (kukki == 0)
+                {
+                    pwm0[0] = 12000;
+                    pwm0[1] = 12000;
+                    pwm0[2] = -12000;
+                    pwm0[3] = -12000;
+                }
+                else if (kukki == 2)
+                {
+                    pwm0[0] = -12000;
+                    pwm0[1] = -12000;
+                    pwm0[2] = 12000;
+                    pwm0[3] = 12000;
+                }
             }
-            else if (buf == 'D' || buf == 'd') // 右回転
+            else if (buf == 'd') // 右回転
             {
-                pwm[0] = 2000;
-                pwm[1] = 2000;
-                pwm[2] = -2000;
-                pwm[3] = -2000;
+                if (kukki == 0)
+                {
+                    pwm0[0] = -12000;
+                    pwm0[1] = -12000;
+                    pwm0[2] = 12000;
+                    pwm0[3] = 12000;
+                }
+                else if (kukki == 2)
+                {
+                    pwm0[0] = 12000;
+                    pwm0[1] = 12000;
+                    pwm0[2] = -12000;
+                    pwm0[3] = -12000;
+                }
             }
-            else if (buf == 'Q' || buf == 'q') // 微弱前進
+            else if (buf == 'q') // 微弱前進
             {
-                pwm[0] = 4000;
-                pwm[1] = 4000;
-                pwm[2] = 4000;
-                pwm[3] = 4000;
+                if (kukki == 0)
+                {
+                    pwm0[0] = 8000;
+                    pwm0[1] = 8000;
+                    pwm0[2] = 8000;
+                    pwm0[3] = 8000;
+                    pwm1[3] = 6500;
+                }
+                else if (kukki == 2)
+                {
+                    pwm0[0] = -8000;
+                    pwm0[1] = -8000;
+                    pwm0[2] = -8000;
+                    pwm0[3] = -8000;
+                    pwm1[3] = -6500;
+                }
             }
-            else if (buf == 'E' || buf == 'e') // 微弱後進
+            else if (buf == 'e') // 微弱後進
             {
-                pwm[0] = -4000;
-                pwm[1] = -4000;
-                pwm[2] = -4000;
-                pwm[3] = -4000;
+                if (kukki == 0)
+                {
+                    pwm0[0] = -8000;
+                    pwm0[1] = -8000;
+                    pwm0[2] = -8000;
+                    pwm0[3] = -8000;
+                    pwm1[3] = -6500;
+                }
+                else if (kukki == 0)
+                {
+                    pwm0[0] = 8000;
+                    pwm0[1] = 8000;
+                    pwm0[2] = 8000;
+                    pwm0[3] = 8000;
+                    pwm1[3] = 6500;
+                }
             }
             else if (buf == 'V' || buf == 'v') // Vだっしゅ！！
             {
-                pwm[0] = 15000;
-                pwm[1] = 15000;
-                pwm[2] = 15000;
-                pwm[3] = 15000;
+                if (kukki == 0)
+                {
+                    pwm0[0] = 27500;
+                    pwm0[1] = 27500;
+                    pwm0[2] = 27500;
+                    pwm0[3] = 27500;
+                    pwm1[3] = 8000;
+                }
+                else if (kukki == 0)
+                {
+                    pwm0[0] = 27500;
+                    pwm0[1] = 27500;
+                    pwm0[2] = 27500;
+                    pwm0[3] = 27500;
+                    pwm1[3] = 8000;
+                }
+
             } // 足回り
 
-            else if (buf == 'Z' || buf == 'z')
-            { // 停止
-                pwm[0] = 0;
-                pwm[1] = 0;
-                pwm[2] = 0;
-                pwm[3] = 0;
+            else if (buf == 'z' || buf == 'A' || buf == 'D')
+            { // 足回り停止
+                pwm0[0] = 0;
+                pwm0[1] = 0;
+                pwm0[2] = 0;
+                pwm0[3] = 0;
+                pwm1[3] = 0;
+            }
+            else if (buf == 'Z')
+            { // 　全体停止
+                pwm0[0] = 0;
+                pwm0[1] = 0;
+                pwm0[2] = 0;
+                pwm0[3] = 0;
+
+                pwm1[0] = 0;
                 pwm1[1] = 0;
+                pwm1[2] = 0;
+                pwm1[3] = 0;
+
+                pwm2[0] = 0;
+                pwm2[1] = 0;
+            }
+            else if (buf == 'o')
+            {
+                pwm1[0] = -10000;
+            }
+            else if (buf == 'l')
+            {
+                pwm1[0] = 4000;
+            }
+            else if (buf == 'U') // ドラム手動　出す
+            {
+                pwm1[3] = 10000;
+            }
+            else if (buf == 'J')
+            {
+                pwm1[3] = -10000; // ドラム手動　巻き取る
+            }
+            else if (buf == 'M') // ドラム手動　停止
+            {
+                pwm1[3] = 0;
             }
 
             if (buf == 'O')
             {
-                dorayaki = 'a';
+                dorayaki = 0;
             }
             else if (buf == 'L')
             {
-                dorayaki = 'b';
+                dorayaki = 1;
             }
             else if (buf == 'k')
             {
-                gohan = 'b';
-            }
-            else if (buf == 'M')
-            {
-                tyuusyoku = 'b';
+                gohan = 1;
             }
             else if (buf == 'N')
             {
-                tyuusyoku = 'a';
+                tyuusyoku = 1;
+            }
+            else if (buf == 'B')
+            {
+                tyuusyoku = 0;
             }
             if (buf == 'y')
             {
-                bekon = 'b';
+                bekon = 1;
             }
             else if (buf == 'h')
             {
-                bekon = 'a';
+                bekon = 0;
             }
 
             // キーに対する処理がわったらCAN通信を行う
@@ -184,69 +351,74 @@ int main()
 
             // ThisThread::sleep_for(1000ms);
         }
-        if (button1State == 1 || button2State == 1)
+        if (kukki == 1)
         {
-            // if(koppepan=='a'){
-            //     koppepan='b';
-            //     osDelay(100);
-            // }
-            // else if(koppepan=='b'){
-            //     koppepan='a';
-            //     osDelay(100);
-            // }
-            pwm[1] = 1000;
+            pwm0[0] = 0;
+            pwm0[1] = 0;
+            pwm0[2] = 0;
+            pwm0[3] = 0;
+        }
+        if (tamago == 1)
+        {
+            pwm2[0] = 0;
+            pwm2[1] = 0;
+        }
+        if (button1.read() == 0)
+        {
+            koppepan = 0;
+        }
+        if (button2.read() == 0)
+        {
+            koppepan = 1;
         }
 
-        if (dorayaki == 'a')
+        if (dorayaki == 0) // 安全装置
         {
-            if (counter <= -3900)
+            if (counter <= -3100)
             {
-                pwm[0] = 0;
-                pwm[1] = 0;
-                pwm[2] = 0;
-                pwm[3] = 0;
-                pwm1[1] = 0;
+                pwm1[0] = 0;
             }
         }
 
-        if (gohan == 'b')
+        if (gohan == 1)
         {
             counter = 0;
-            gohan = 'a';
+            gohan = 0;
         }
-        if (tyuusyoku == 'b')
+        if (tyuusyoku == 1)
         {
-            if (counter > 0)
+            if (counter > 0) // 安全装置
             {
-                pwm[0] = 0;
-                pwm[1] = 0;
-                pwm[2] = 0;
-                pwm[3] = 0;
-                pwm1[1] = 0;
+                pwm1[0] = 0;
             }
         }
         // もしbekonがaならラックアンドピニオンをとめる。bなら動かす。
-        if (bekon == 'b')
+        if (bekon == 1)
         {
-            if (koppepan == 'a')
+            if (koppepan == 0)
             {
-                pwm[1] = 6000;
+                pwm1[1] = 8000;
+                pwm1[2] = 6000;
             }
-            else if (koppepan == 'b')
+            if (koppepan == 1)
             {
-                pwm[1] = -6000;
+                pwm1[1] = -8000;
+                pwm1[2] = 6000;
             }
         }
-        else if (bekon == 'a')
+        else if (bekon == 0)
         {
-            pwm[1] = 0;
+            pwm1[1] = 0;
+            pwm1[2] = 0;
         }
 
-        CANMessage msg(1, (const uint8_t *)pwm, 8);
-        CANMessage msg1(5, (const uint8_t *)pwm1, 8);
+        CANMessage msg0(1, (const uint8_t *)pwm0, 8);
+        CANMessage msg1(2, (const uint8_t *)pwm1, 8);
+        CANMessage msg2(5, (const uint8_t *)pwm2, 8);
 
-        can.write(msg);
+        can.write(msg0);
         can.write(msg1);
+        can.write(msg2);
         printf("counter: %d\n", counter);
     }
 }
