@@ -1,0 +1,153 @@
+#include <mbed.h>
+#include "FIRSTPENGUIN.hpp"
+// #include "SolenoidController.hpp"
+#include "ServoController.hpp"
+#include "hassya.hpp"
+
+constexpr uint32_t can_id = 30;
+
+BufferedSerial pc{USBTX, USBRX, 250000};
+CAN can{PA_11, PA_12, (int)1e6};
+CANMessage msg;
+Timer timer;
+FirstPenguin penguin{can_id, can};
+int16_t pwm0[4] = {0, 0, 0, 0}; // モタドラ1
+
+DigitalIn button1(PC_13);
+DigitalIn button2(PC_12);
+
+int suuti = 0;
+int gohan = 0;
+int tamagokoppepan = 0;
+int cylinder3_time = 0;
+
+int main()
+{
+    button1.mode(PullUp);
+    button2.mode(PullUp);
+    timer.start();
+    // SolenoidController solenoidController(can, pc);
+    ServoController servoController(can, pc);
+
+    char command[1];                // Command and number combination array
+    int16_t pwm0[4] = {0, 0, 0, 0}; // Motor control array
+
+    auto pre = timer.elapsed_time(); // Previous time
+    int number_r = 0, number_R = 0, number_L = 0;
+    int loop_count = 0;
+    Timer buffer_clear_timer;
+    Timer serial_read_timer; // シリアル読み取り用タイマー
+    while (1)
+    {
+        if (pc.readable())
+        {
+            char buf;
+            pc.read(&buf, sizeof(buf));
+            if (buf == 'D')
+            {
+                penguin.pwm[0] = 17000;
+                penguin.pwm[1] = 0;
+                penguin.pwm[2] = 0;
+                // ThisThread::sleep_for(20ms);
+                penguin.send();
+            }
+            else if (buf == 'd')
+            {
+                penguin.pwm[0] = -17000;
+                penguin.pwm[1] = 0;
+                penguin.pwm[2] = 0;
+            }
+            else if (buf == 'f')
+            {
+                penguin.pwm[0] = 0;
+                penguin.pwm[1] = 0;
+                penguin.pwm[3] = 3000;
+            }
+            else if (buf == 'g')
+            {
+                penguin.pwm[0] = 0;
+                penguin.pwm[1] = 0;
+                penguin.pwm[3] = -3000;
+            }
+            else if (buf == 'i')
+            {
+                if (button2 == 1)
+                {
+                    penguin.pwm[0] = 0;
+                    penguin.pwm[1] = 3000;
+                    penguin.pwm[2] = 0;
+                }
+                else
+                {
+                    penguin.pwm[1] = 0;
+                    penguin.pwm[0] = 0;
+                    penguin.pwm[2] = 0;
+                }
+            }
+            else if (buf == 'y')
+            {
+                if (button1 == 1)
+                {
+                    penguin.pwm[0] = 0;
+                    penguin.pwm[1] = -3000;
+                    penguin.pwm[2] = 0;
+                }
+                else
+                {
+                    penguin.pwm[0] = 0;
+                    penguin.pwm[1] = 0;
+                    penguin.pwm[2] = 0;
+                }
+            }
+            else if (buf == 'q' or buf == 'Z')
+            {
+                penguin.pwm[0] = 0;
+                penguin.pwm[1] = 0;
+                penguin.pwm[2] = 0;
+                penguin.pwm[3] = 0;
+                penguin.send();
+            }
+            if (buf == 'w')
+            {
+                pwm0[0] = 2000;
+                pwm0[1] = 2000;
+                pwm0[2] = -2000;
+                pwm0[3] = -2000;
+            }
+            else if (buf == 's')
+            {
+                pwm0[0] = -2000;
+                pwm0[1] = -2000;
+                pwm0[2] = 2000;
+                pwm0[3] = 2000;
+            }
+            else if (buf == 'a')
+            {
+                pwm0[0] = 2000;
+                pwm0[1] = -2000;
+                pwm0[2] = 2000;
+                pwm0[3] = -2000;
+            }
+            else if (buf == 'd')
+            {
+                pwm0[0] = -2000;
+                pwm0[1] = 2000;
+                pwm0[2] = -2000;
+                pwm0[3] = 2000;
+            }
+            else if (buf == 'z')
+            {
+                pwm0[0] = 0;
+                pwm0[1] = 0;
+                pwm0[2] = 0;
+                pwm0[3] = 0;
+            }
+            // メッセージの送信
+        }
+        servoController.run();
+        CANMessage msg0(2, (const uint8_t *)pwm0, 8);
+        can.write(msg0);
+        penguin.send();
+        ThisThread::sleep_for(20ms);
+    }
+}
